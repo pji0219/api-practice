@@ -17,7 +17,7 @@ const originalMsgs = Array(50)
     timestamp: 1234567890123 + (50 - index) * 1000 * 60,
     text: `${50 - index} mock text`,
   }));
-console.log(JSON.stringify(originalMsgs));
+
 function MsgList() {
   const [msgs, setMsgs] = useState(originalMsgs);
   const [editingId, setEditingId] = useState(null);
