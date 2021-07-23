@@ -1,40 +1,28 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import MsgInput from './MsgInput';
 import MsgItem from './MsgItem';
-
-const userIds = ['park', 'kim'];
-
-// userIds 배열의 인덱스를 한자리 수 랜덤하게 정하는 메서드로 고름
-const getRandomUserId = () => userIds[Math.round(Math.random())];
-
-// 빈 배열 50개에 fill(0)으로 아무 숫자나 넣고 맵 돌려서 인덱스만 인자로 받아와서 배열 만듦
-const originalMsgs = Array(50)
-  .fill(0)
-  .map((_, index) => ({
-    id: 50 - index,
-    userId: getRandomUserId(),
-    // 밀리초 단위를 초로 바꾸고 그것을 분 단위로 바꿈 (결론: 분단위)
-    timestamp: 1234567890123 + (50 - index) * 1000 * 60,
-    text: `${50 - index} mock text`,
-  }));
+import fetcher from '../fetcher';
 
 function MsgList() {
-  const [msgs, setMsgs] = useState(originalMsgs);
+  const [msgs, setMsgs] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
-  const onCreate = (text) => {
-    const newMsg = {
-      id: msgs.length + 1,
-      userId: getRandomUserId(),
-      timestamp: Date.now(),
-      text: `${msgs.length + 1} ${text}`,
-    };
+  // url에 쿼리로 입력하는 id를 받아 오기 위함
+  const {
+    query: { userId = '' },
+  } = useRouter();
+
+  const onCreate = async (text) => {
+    const newMsg = await fetcher('post', '/messages', { text, userId });
 
     // 이전 state를 파라미터로 받아서 복사하고 새로운 state도 추가해서 같이 업데이트
     setMsgs((msgs) => [newMsg, ...msgs]);
   };
 
   const onUpdate = (text, id) => {
+    const newMsg = await fetcher('put', `/messages/${id}`, { text, userId });
+
     setMsgs((msgs) => {
       // state에서 수정하고자 하는 메세지의 id와 일치하는 항목을 찾음
       const targetIndex = msgs.findIndex((msg) => msg.id === id);
@@ -57,6 +45,9 @@ function MsgList() {
     doneEdit();
   };
 
+  // 메세지 수정이 완료되면 state를 null로 바꿔줌
+  const doneEdit = () => setEditingId(null);
+
   const onDelete = (id) => {
     setMsgs((msgs) => {
       // state에서 삭제하고자 하는 메세지의 id와 일치하는 항목을 찾음
@@ -75,8 +66,14 @@ function MsgList() {
     });
   };
 
-  // 메세지 수정이 완료되면 state를 null로 바꿔줌
-  const doneEdit = () => setEditingId(null);
+  const getMessages = async () => {
+    const msgs = await fetcher('get', '/messages');
+    setMsgs(msgs);
+  };
+
+  useEffect(() => {
+    getMessages();
+  }, []);
 
   return (
     <>
@@ -93,6 +90,7 @@ function MsgList() {
             onDelete={() => onDelete(item.id)}
             startEdit={() => setEditingId(item.id)}
             isEditing={editingId === item.id}
+            myId={userId}
           />
         ))}
       </ul>
