@@ -1,27 +1,37 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import MsgInput from './MsgInput';
 import MsgItem from './MsgItem';
 import fetcher from '../fetcher';
+import useInfiniteScroll from '../hooks/useInfiniteScroll';
 
-function MsgList() {
-  const [msgs, setMsgs] = useState([]);
+function MsgList({ smsgs, users }) {
+  const [msgs, setMsgs] = useState(smsgs);
   const [editingId, setEditingId] = useState(null);
 
   // url에 쿼리로 입력하는 id를 받아 오기 위함
-  const {
-    query: { userId = '' },
-  } = useRouter();
+  const { query } = useRouter();
+  const userId = query.userId || query.userid || '';
+
+  const fetchMoreEl = useRef(null);
+
+  // 무한 스크롤을 하기 위한 커스텀 훅
+  const intersecting = useInfiniteScroll(fetchMoreEl);
+
+  // 스크롤될 다음 메세지가 있는지 여부
+  const [hasNext, setHasNext] = useState(true);
 
   const onCreate = async (text) => {
     const newMsg = await fetcher('post', '/messages', { text, userId });
+    if (!newMsg) throw Error('somthing wrong');
 
     // 이전 state를 파라미터로 받아서 복사하고 새로운 state도 추가해서 같이 업데이트
     setMsgs((msgs) => [newMsg, ...msgs]);
   };
 
-  const onUpdate = (text, id) => {
+  const onUpdate = async (text, id) => {
     const newMsg = await fetcher('put', `/messages/${id}`, { text, userId });
+    if (!newMsg) throw Error('somthing wrong');
 
     setMsgs((msgs) => {
       // state에서 수정하고자 하는 메세지의 id와 일치하는 항목을 찾음
@@ -35,11 +45,8 @@ function MsgList() {
       const newMsgs = [...msgs];
 
       // 기존 state를 복사 시킨 새로운 배열의 id가 일치하는 index의 메세지는 잘라내고
-      // 기존 state에서 메세지를 복사한 뒤 새로운 텍스트로 수정하고 수정된 메세지를 새로운 배열에 넣고 기존 state에 덮어 씌움
-      newMsgs.splice(targetIndex, 1, {
-        ...msgs[targetIndex],
-        text,
-      });
+      // 서버에서 응답온 수정된 메세지를 새로운 배열에 넣고 state 업데이트
+      newMsgs.splice(targetIndex, 1, newMsg);
       return newMsgs;
     });
     doneEdit();
@@ -48,10 +55,12 @@ function MsgList() {
   // 메세지 수정이 완료되면 state를 null로 바꿔줌
   const doneEdit = () => setEditingId(null);
 
-  const onDelete = (id) => {
+  const onDelete = async (id) => {
+    const receviedId = await fetcher('delete', `/messages/${id}`, { params: { userId } });
+
     setMsgs((msgs) => {
       // state에서 삭제하고자 하는 메세지의 id와 일치하는 항목을 찾음
-      const targetIndex = msgs.findIndex((msg) => msg.id === id);
+      const targetIndex = msgs.findIndex((msg) => msg.id === receviedId + '');
 
       // 찾고자 하는 index가 -1일 경우는 항목이 없는 경우
       // 그런 경우에는 기존 state 리턴
@@ -67,17 +76,24 @@ function MsgList() {
   };
 
   const getMessages = async () => {
-    const msgs = await fetcher('get', '/messages');
-    setMsgs(msgs);
+    const newMsgs = await fetcher('get', '/messages', { params: { cursor: msgs[msgs.length - 1]?.id || '' } });
+    
+    // 응답 받아온 메세지가 없으면 아무것도 안하고 리턴
+    if (newMsgs.length === 0) {
+      setHasNext(false)
+      return
+    }
+
+    setMsgs(msgs => [...msgs, ...newMsgs]);
   };
 
   useEffect(() => {
-    getMessages();
-  }, []);
+    if (intersecting && hasNext) getMessages();
+  }, [intersecting]);
 
   return (
     <>
-      <MsgInput mutate={onCreate} />
+      {userId && <MsgInput mutate={onCreate} />}
       <ul className="messages">
         {msgs.map((item) => (
           <MsgItem
@@ -94,6 +110,7 @@ function MsgList() {
           />
         ))}
       </ul>
+      <div ref={fetchMoreEl} />
     </>
   );
 }

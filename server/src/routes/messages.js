@@ -11,9 +11,11 @@ const messagesRoute = [
   { // GET MESSAGES
     method: 'get',
     route: '/messages',
-    handler: (req, res) => {
+    handler: ({ query: { cursor = '' } }, res) => {
       const msgs = getMsgs();
-      res.send(msgs);
+      const fromIndex = msgs.findIndex(msg => msg.id === cursor) + 1
+
+      res.send(msgs.slice(fromIndex, fromIndex + 15));
     }
   },
 
@@ -37,24 +39,30 @@ const messagesRoute = [
     method: 'post',
     route: '/messages',
     handler: ({ body }, res) => {
-      const msgs = getMsgs();
+      try {
+        if (!body.userId) throw Error('no user id');
+        const msgs = getMsgs();
 
-      // 새로운 메세지
-      const newMsg = {
-        id: v4(),
-        text: body.text,
-        userId: body.userId,
-        timestamp: Date.now()
+        // 새로운 메세지
+        const newMsg = {
+          id: v4(),
+          text: body.text,
+          userId: body.userId,
+          timestamp: Date.now()
+        }
+
+        // 새로운 메세지 배열에 추가
+        msgs.unshift(newMsg);
+
+        // DB에 추가
+        setMsgs(msgs);
+
+        // 새로운 메세지 응답
+        res.send(newMsg);
+
+      } catch (err) {
+        res.status(500).send({ error: err });
       }
-
-      // 새로운 메세지 배열에 추가
-      msgs.unshift(newMsg);
-
-      // DB에 추가
-      setMsgs(msgs);
-
-      // 새로운 메세지 응답
-      res.send(newMsg);
     }
   },
 
@@ -92,15 +100,15 @@ const messagesRoute = [
   { // DELETE MESSAGES
     method: 'delete',
     route: '/messages/:id',
-    handler: ({ body, params: { id } }, res) => {
+    handler: ({ params: { id }, query: { userId } }, res) => {
       try {
         const msgs = getMsgs();
 
-        // DB에서 수정하려는 메세지 id와 같은 메세지를 찾음
+        // DB에서 삭제하려는 메세지 id와 같은 메세지를 찾음
         const targetIndex = msgs.findIndex(msg => msg.id === id);
 
         if (targetIndex < 0) throw '메세지가 없습니다.';
-        if (msgs[targetIndex].userId !== body.userId) throw '사용자가 다릅니다.'
+        if (msgs[targetIndex].userId !== userId) throw '사용자가 다릅니다.'
 
         // 선택한 메세지를 삭제
         msgs.splice(targetIndex, 1)
